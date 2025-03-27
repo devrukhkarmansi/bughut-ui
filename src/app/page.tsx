@@ -1,103 +1,107 @@
-import Image from "next/image";
+"use client";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useState, ChangeEvent } from "react";
+import Link from "next/link";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [nickname, setNickname] = useState("");
+  const [roomCode, setRoomCode] = useState("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const handleNicknameChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setNickname(e.target.value);
+  };
+
+  const handleRoomCodeChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setRoomCode(e.target.value.toUpperCase());
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 bg-gradient-to-b from-gray-900 via-gray-900/95 to-purple-900/10 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-8">
+        {/* Title */}
+        <div className="text-center">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-green-400 bg-clip-text text-transparent mb-2">
+            Bug Hunt
+          </h1>
+          <p className="text-purple-300/70">
+            A developer-themed memory card game
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        {/* Nickname Input */}
+        <div className="space-y-2">
+          <label
+            htmlFor="nickname"
+            className="text-sm font-medium text-purple-400"
+          >
+            Your Nickname
+          </label>
+          <Input
+            id="nickname"
+            placeholder="Enter your nickname"
+            value={nickname}
+            onChange={handleNicknameChange}
+            className="mt-2 w-full bg-gray-800/50 border-purple-500/20 text-green-400 placeholder:text-purple-300/40 focus:border-purple-500/50 focus:ring-purple-500/20"
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="space-y-4">
+          <Link
+            href={`/waiting-room?nickname=${nickname}&isHost=true`}
+            className="w-full"
+          >
+            <Button
+              className="mb-4 w-full bg-purple-500 hover:bg-purple-600 text-white border-none"
+              disabled={!nickname}
+            >
+              Create Room
+            </Button>
+          </Link>
+
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter room code"
+              value={roomCode}
+              onChange={handleRoomCodeChange}
+              className="flex-1 bg-gray-800/50 border-purple-500/20 text-green-400 placeholder:text-purple-300/40 focus:border-purple-500/50 focus:ring-purple-500/20"
+            />
+            <Link
+              href={`/waiting-room?nickname=${nickname}&roomCode=${roomCode}`}
+            >
+              <Button
+                className="whitespace-nowrap bg-gray-800/50 border border-green-500/20 text-green-400 hover:bg-green-500/10 hover:text-green-300"
+                disabled={!nickname || !roomCode}
+              >
+                Join Room
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* How to Play Section */}
+        <div className="mt-8 p-4 bg-gray-800/50 rounded-lg border border-purple-500/20">
+          <h2 className="text-lg font-semibold text-purple-400 mb-2">
+            How to Play
+          </h2>
+          <ol className="list-decimal list-inside space-y-1 text-sm">
+            <li className="text-green-400">Enter your nickname</li>
+            <li className="text-purple-300/70">
+              Create a room or join with a code
+            </li>
+            <li className="text-green-400">Wait for other players to join</li>
+            <li className="text-purple-300/70">
+              Match bug cards with their solutions
+            </li>
+            <li className="text-green-400">Score points for each match</li>
+            <li className="text-purple-300/70">
+              Win by finding the most matches!
+            </li>
+          </ol>
+        </div>
+      </div>
     </div>
   );
 }
