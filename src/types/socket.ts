@@ -75,6 +75,7 @@ export interface CardFlipPayload {
   event: "game:flipCard";
   data: {
     gameId: string;
+    roomCode: string;
     cardId: string;
   };
 }
@@ -85,6 +86,7 @@ export interface CardFlippedResponse {
     gameState: GameState;
     cardId: string;
     playerId: string;
+    timeLeft: number;
   };
 }
 
@@ -188,6 +190,7 @@ export interface ServerToClientEvents {
   "game:noMatch": (response: NoMatchResponse) => void;
   "game:turnChanged": (response: TurnChangedResponse) => void;
   "game:over": (response: GameOverResponse) => void;
+  "game:error": (response: GameErrorResponse) => void;
   "player:joined": (response: { data: Player }) => void;
   "player:left": (response: { data: { id: string } }) => void;
   error: (response: { message: string }) => void;
@@ -198,6 +201,7 @@ export interface ClientToServerEvents {
   "room:join": (data: RoomJoinPayload) => void;
   "room:startGame": (data: GameStartPayload) => void;
   "game:flipCard": (data: CardFlipPayload) => void;
+  "game:turnTimeout": (data: TurnTimeoutPayload) => void;
 }
 
 // Create a combined type for the socket
@@ -210,3 +214,12 @@ export type GameSocket = SocketIOSocket<
     listener: (ServerToClientEvents & SocketReservedEvents)[T]
   ) => GameSocket;
 };
+
+// Add TurnTimeoutPayload type
+export interface TurnTimeoutPayload {
+  event: "game:turnTimeout";
+  data: {
+    gameId: string;
+    playerId: string;
+  };
+}

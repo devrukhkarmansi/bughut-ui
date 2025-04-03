@@ -10,6 +10,7 @@ import type {
   TurnChangedResponse,
   GameOverResponse,
   GameStartedResponse,
+  GameErrorResponse,
 } from "@/types/socket";
 import type { GameState, Player } from "@/types/game";
 
@@ -22,6 +23,8 @@ interface RoomState {
   gameState: GameState | null;
   _isLeaving: boolean;
   _lastCreateTime: number;
+  _turnTimer: NodeJS.Timeout | null;
+  _flippedCardId: string | null;
   setRoomCode: (code: string) => void;
   setHost: (isHost: boolean) => void;
   setPlayers: (players: Player[]) => void;
@@ -94,12 +97,22 @@ const setupSocketListeners = (
       status: "waiting",
     });
 
+    // Update state in a single operation to ensure consistency
     set({
       roomCode: response.data.roomCode,
       isHost: true,
       players: playersArray,
       status: "waiting",
+      error: null,
     });
+
+    // Double check the state was updated correctly
+    const afterState = useRoomStore.getState();
+    console.log("=== State After Room Creation ===");
+    console.log("Room Code:", afterState.roomCode);
+    console.log("Is Host:", afterState.isHost);
+    console.log("Players:", afterState.players);
+    console.log("Status:", afterState.status);
   });
 
   // Room joined event
@@ -213,25 +226,6 @@ const setupSocketListeners = (
       console.log("New state:", newState);
       return newState;
     });
-
-    // Store game state in sessionStorage to persist across navigation
-    if (typeof window !== "undefined") {
-      try {
-        const currentState = useRoomStore.getState();
-        sessionStorage.setItem(
-          "gameState",
-          JSON.stringify({
-            roomCode: currentState.roomCode,
-            isHost: currentState.isHost,
-            players: currentState.players,
-            status: "playing",
-            gameState: response.data,
-          })
-        );
-      } catch (error) {
-        console.error("Failed to store game state:", error);
-      }
-    }
 
     // Double check the state was updated
     const afterState = useRoomStore.getState();
@@ -357,6 +351,14 @@ const setupSocketListeners = (
     console.log("Game state:", response.data.gameState);
     console.log("Current player:", response.data.currentPlayer);
     console.log("Message:", response.data.message);
+    console.log(
+      "Cards state:",
+      response.data.gameState.cards.map((card) => ({
+        id: card.id,
+        isFlipped: card.isFlipped,
+        flippedBy: card.flippedBy,
+      }))
+    );
 
     // Update both game state and player scores
     set((state) => {
@@ -399,14 +401,8 @@ const setupSocketListeners = (
       },
     });
 
-    // After 5 seconds, reset the game state and clear session data
+    // After 5 seconds, reset the game state
     setTimeout(() => {
-      // Clear session storage
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("gameState");
-        sessionStorage.removeItem("roomState");
-      }
-
       // Reset store state
       set({
         gameState: null,
@@ -461,20 +457,6 @@ const setupSocketListeners = (
   socket.on("connect", () => {
     console.log("=== Socket Connected ===");
     console.log("Socket ID:", socket.id);
-
-    // Try to restore state from sessionStorage
-    if (typeof window !== "undefined") {
-      try {
-        const savedState = sessionStorage.getItem("gameState");
-        if (savedState) {
-          const parsedState = JSON.parse(savedState);
-          set(parsedState);
-          console.log("=== Restored Game State ===", parsedState);
-        }
-      } catch (error) {
-        console.error("Failed to restore game state:", error);
-      }
-    }
   });
 
   // Disconnection event
@@ -494,6 +476,8 @@ export const useRoomStore = create<RoomState>((set) => ({
   gameState: null,
   _isLeaving: false,
   _lastCreateTime: 0,
+  _turnTimer: null,
+  _flippedCardId: null,
 
   setRoomCode: (code) => set({ roomCode: code }),
   setHost: (isHost) => set({ isHost }),
@@ -528,24 +512,107 @@ export const useRoomStore = create<RoomState>((set) => ({
     set({
       _lastCreateTime: now,
       isHost: true, // Set host flag immediately
+      status: "waiting", // Ensure status is set
+      error: null, // Clear any previous errors
     });
 
-    // Store state in sessionStorage
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        "roomState",
-        JSON.stringify({
+    // Function to emit room creation
+    const emitRoomCreate = () => {
+      console.log("=== Emitting Room Create ===");
+      console.log("Socket connected:", socket.connected);
+      console.log("Socket ID:", socket.id);
+
+      // Remove any existing listeners to prevent duplicates
+      socket.off("room:created");
+
+      // Add a one-time listener for room:created
+      socket.once("room:created", (response: RoomCreatedResponse) => {
+        console.log("=== Room Created Response Received ===");
+        console.log("Response:", response);
+
+        if (!response.data?.roomCode) {
+          console.error("Invalid room creation response - missing roomCode");
+          set({ error: "Invalid room creation response" });
+          return;
+        }
+
+        // Create host player with default values if host data is missing
+        const hostPlayer: Player = {
+          id: response.data.host?.id || `host-${Date.now()}`,
+          nickname: response.data.host?.nickname || "Host",
+          score: 0,
+          matchesFound: 0,
           isHost: true,
-          nickname,
-          timestamp: now,
-        })
-      );
-    }
+          isReady: false,
+          joinedAt: Date.now(),
+        };
 
-    socket.emit("room:create", {
-      event: "room:create",
-      data: { nickname },
-    });
+        // Convert players object to array if it exists
+        const playersArray = response.data.players
+          ? Object.values(response.data.players).map(
+              (socketPlayer: {
+                id: string;
+                nickname: string;
+                isHost: boolean;
+                isReady: boolean;
+                joinedAt: number;
+              }) => ({
+                id: socketPlayer.id,
+                nickname: socketPlayer.nickname,
+                score: 0,
+                matchesFound: 0,
+                isHost: socketPlayer.isHost,
+                isReady: socketPlayer.isReady,
+                joinedAt: socketPlayer.joinedAt,
+              })
+            )
+          : [hostPlayer];
+
+        console.log("Setting state with:", {
+          roomCode: response.data.roomCode,
+          isHost: true,
+          players: playersArray,
+          status: "waiting",
+        });
+
+        // Update state in a single operation to ensure consistency
+        set({
+          roomCode: response.data.roomCode,
+          isHost: true,
+          players: playersArray,
+          status: "waiting",
+          error: null,
+        });
+
+        // Double check the state was updated correctly
+        const afterState = useRoomStore.getState();
+        console.log("=== State After Room Creation ===");
+        console.log("Room Code:", afterState.roomCode);
+        console.log("Is Host:", afterState.isHost);
+        console.log("Players:", afterState.players);
+        console.log("Status:", afterState.status);
+      });
+
+      socket.emit("room:create", {
+        event: "room:create",
+        data: { nickname },
+      });
+    };
+
+    // If socket is already connected, emit immediately
+    if (socket.connected) {
+      emitRoomCreate();
+    } else {
+      // If socket is not connected, wait for connection
+      console.log("Socket not connected, waiting for connection...");
+      socket.once("connect", () => {
+        console.log("Socket connected, now emitting room create");
+        emitRoomCreate();
+      });
+
+      // Attempt to connect
+      socket.connect();
+    }
   },
 
   joinRoom: (roomCode, nickname) => {
@@ -560,19 +627,6 @@ export const useRoomStore = create<RoomState>((set) => ({
       roomCode, // Set room code immediately
       isHost: false, // Set host flag immediately
     });
-
-    // Store state in sessionStorage
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        "roomState",
-        JSON.stringify({
-          roomCode,
-          isHost: false,
-          nickname,
-          timestamp: Date.now(),
-        })
-      );
-    }
 
     socket.emit("room:join", {
       event: "room:join",
@@ -599,11 +653,7 @@ export const useRoomStore = create<RoomState>((set) => ({
 
     set({ _isLeaving: true });
 
-    // Clear stored state
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("roomState");
-    }
-
+    // Reset all state to initial values
     set({
       roomCode: null,
       isHost: false,
@@ -612,7 +662,14 @@ export const useRoomStore = create<RoomState>((set) => ({
       error: null,
       gameState: null,
       _isLeaving: false,
+      _lastCreateTime: 0, // Reset the last create time
     });
+
+    // Disconnect and reconnect socket to ensure clean state
+    if (socket.connected) {
+      socket.disconnect();
+      socket.connect();
+    }
   },
 
   // Add new method to restore room state
@@ -688,23 +745,97 @@ export const useRoomStore = create<RoomState>((set) => ({
 
   flipCard: (cardId: string) => {
     const state = useRoomStore.getState();
-    if (!state.gameState?.gameId) {
+    if (!state.gameState?.gameId || !state.roomCode) {
       console.log("=== Cannot Flip Card ===");
-      console.log("No active game");
+      console.log("No active game or room code");
+      console.log("Game State:", state.gameState);
+      console.log("Room Code:", state.roomCode);
       return;
     }
 
     console.log("=== Flipping Card ===");
     console.log("Game ID:", state.gameState.gameId);
+    console.log("Room Code:", state.roomCode);
     console.log("Card ID:", cardId);
+    console.log("Socket Status:", {
+      id: socket.id,
+      connected: socket.connected,
+      disconnected: socket.disconnected,
+    });
 
+    // If this is the first card being flipped
+    if (!state._flippedCardId) {
+      console.log("=== First card of turn ===");
+      set({
+        _flippedCardId: cardId,
+      });
+    }
+
+    // Remove any existing one-time listeners to prevent duplicates
+    socket.off("game:cardFlipped");
+    socket.off("game:error");
+
+    // Add one-time listener for the response
+    socket.once("game:cardFlipped", (response: CardFlippedResponse) => {
+      // Update the game state with the new state from the server
+      set((state) => {
+        if (!state.gameState) return state;
+
+        // Update the specific card that was flipped
+        const updatedCards = state.gameState.cards.map((card) => {
+          if (card.id === response.data.cardId) {
+            return {
+              ...card,
+              isFlipped: true,
+              flippedBy: response.data.playerId,
+            };
+          }
+          return card;
+        });
+
+        // Update player scores and turn time
+        const updatedPlayers = state.players.map((player) => {
+          const updatedPlayer = response.data.gameState.players[player.id];
+          if (updatedPlayer) {
+            return {
+              ...player,
+              score: updatedPlayer.score,
+              matchesFound: updatedPlayer.matchesFound,
+            };
+          }
+          return player;
+        });
+
+        return {
+          gameState: {
+            ...response.data.gameState,
+            cards: updatedCards,
+            turnTimeLeft: response.data.timeLeft,
+          },
+          players: updatedPlayers,
+        };
+      });
+    });
+
+    // Add one-time listener for errors
+    socket.once("game:error", (response: GameErrorResponse) => {
+      console.error("=== Card Flip Error ===");
+      console.error("Error response:", response);
+      set({ error: response.data.message });
+    });
+
+    // Emit the flip card event
     socket.emit("game:flipCard", {
       event: "game:flipCard",
       data: {
         gameId: state.gameState.gameId,
+        roomCode: state.roomCode,
         cardId,
       },
     });
+
+    // Log that the event was emitted
+    console.log("=== Flip Card Event Emitted ===");
   },
 }));
 

@@ -2,12 +2,20 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState, ChangeEvent } from "react";
+import { useState, ChangeEvent, useEffect } from "react";
 import Link from "next/link";
+import { useRoomStore } from "@/store/roomStore";
 
 export default function Home() {
   const [nickname, setNickname] = useState("");
   const [roomCode, setRoomCode] = useState("");
+  const { leaveRoom } = useRoomStore();
+
+  // Reset room state when home page loads
+  useEffect(() => {
+    console.log("=== Resetting Room State ===");
+    leaveRoom();
+  }, [leaveRoom]);
 
   const handleNicknameChange = (e: ChangeEvent<HTMLInputElement>) => {
     setNickname(e.target.value);

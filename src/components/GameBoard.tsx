@@ -2,11 +2,88 @@ import { useRoomStore } from "@/store/roomStore";
 import { Card } from "./Card";
 import { useEffect, useState } from "react";
 import { socket } from "@/lib/socket";
+import type { MatchResponse } from "@/types/socket";
 
 export const GameBoard = () => {
   const gameState = useRoomStore((state) => state.gameState);
   const status = useRoomStore((state) => state.status);
   const [showGameOver, setShowGameOver] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(30);
+
+  // Effect to handle timer and match events
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+
+    const startTimer = () => {
+      console.log("Starting timer");
+      setTimeLeft(30);
+
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            if (timer) clearInterval(timer);
+            if (gameState?.gameId && gameState?.currentTurn) {
+              socket.emit("game:turnTimeout", {
+                event: "game:turnTimeout",
+                data: {
+                  gameId: gameState.gameId,
+                  playerId: gameState.currentTurn,
+                },
+              });
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    };
+
+    // Start timer on turn change if game is still active
+    if (isMyTurn() && !gameState?.winners) {
+      startTimer();
+    }
+
+    // Listen for match events
+    const handleMatch = (response: MatchResponse) => {
+      // Only reset timer if it's my turn, I found the match, and game isn't over
+      if (
+        isMyTurn() &&
+        response.data.playerId === socket.id &&
+        !gameState?.winners
+      ) {
+        console.log("Match found by me, resetting timer");
+        if (timer) clearInterval(timer);
+        startTimer();
+      }
+    };
+
+    socket.on("game:match", handleMatch);
+
+    // Clear timer if game ends
+    if (gameState?.winners && timer) {
+      console.log("Game over, stopping timer");
+      clearInterval(timer);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+      socket.off("game:match", handleMatch);
+    };
+  }, [gameState?.currentTurn, gameState?.winners]);
+
+  // Helper function to check if it's the current player's turn
+  const isMyTurn = () => {
+    if (!gameState) return false;
+    const mySocketId = socket.id;
+    const players = Object.values(gameState.players);
+    const currentPlayerId = gameState.currentTurn || gameState.currentPlayerId;
+    console.log("Turn check:", {
+      currentPlayerId,
+      mySocketId,
+      players,
+    });
+    return currentPlayerId === mySocketId;
+  };
 
   // Effect to handle game over state
   useEffect(() => {
@@ -44,24 +121,32 @@ export const GameBoard = () => {
     return `${player.nickname}${player.id === socket.id ? " (You)" : ""}`;
   };
 
-  // Helper function to check if it's the current player's turn
-  const isMyTurn = () => {
-    const mySocketId = socket.id;
-    const me = players.find((p) => p.id === mySocketId);
-
-    console.log("Turn check:", {
-      currentPlayerId,
-      mySocketId,
-      currentPlayer,
-      me,
-      players,
-    });
-
-    return currentPlayerId === mySocketId;
-  };
-
   return (
-    <div className="flex flex-col h-screen p-4 bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-gray-900 p-8">
+      {/* Timer display */}
+      {isMyTurn() && (
+        <div className="fixed top-8 right-8 bg-gray-800/50 backdrop-blur-sm px-4 py-2 rounded-lg border border-green-500/20">
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-medium text-green-400/80">
+              Time Left
+            </div>
+            <div
+              className={`
+                text-2xl font-bold min-w-[3ch] text-center
+                ${
+                  timeLeft <= 10
+                    ? "text-red-400 animate-pulse"
+                    : "text-green-400"
+                }
+                transition-colors duration-300
+              `}
+            >
+              {timeLeft}s
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Game Over Toast */}
       {showGameOver && gameState.winners && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
@@ -88,7 +173,6 @@ export const GameBoard = () => {
         </div>
       )}
 
-      {/* Main Game Layout */}
       <div className="flex flex-row gap-8 h-full">
         {/* Left Side - Player Scores */}
         <div className="w-1/4 flex flex-col gap-4 pt-[180px]">
@@ -126,7 +210,7 @@ export const GameBoard = () => {
             </h1>
           </div>
 
-          {/* Turn Indicator */}
+          {/* Turn Indicator and Timer */}
           <div className="mb-8 text-center">
             <h2 className="text-2xl font-bold text-purple-400">
               {isMyTurn() ? (

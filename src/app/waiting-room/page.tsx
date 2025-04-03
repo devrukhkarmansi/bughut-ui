@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRoomStore } from "@/store/roomStore";
-import { connectSocket } from "@/lib/socket";
 import { Button } from "@/components/ui/button";
-import { ClipboardCopy, Check } from "lucide-react";
+import { ClipboardCopy, Check, Loader2 } from "lucide-react";
 
 // Declare global state
 declare global {
@@ -22,10 +21,11 @@ export default function WaitingRoomPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nickname = searchParams.get("nickname") || "";
-  const roomCode = searchParams.get("roomCode");
+  const roomCode = searchParams.get("roomCode") || "";
   const isHost = searchParams.get("isHost") === "true";
   const cleanupRef = useRef(false);
   const [copied, setCopied] = useState(false);
+  const [isStartingGame, setIsStartingGame] = useState(false);
 
   const status = useRoomStore((state) => state.status);
   const players = useRoomStore((state) => state.players);
@@ -37,6 +37,38 @@ export default function WaitingRoomPage() {
   const createRoom = useRoomStore((state) => state.createRoom);
   const joinRoom = useRoomStore((state) => state.joinRoom);
   const restoreRoomState = useRoomStore((state) => state.restoreRoomState);
+
+  // Initialize room when component mounts
+  useEffect(() => {
+    console.log("=== Initializing Room ===", {
+      nickname,
+      roomCode,
+      isHost,
+      currentRoomCode,
+    });
+
+    if (!nickname) {
+      console.log("No nickname provided, redirecting to home");
+      router.push("/");
+      return;
+    }
+
+    if (isHost) {
+      console.log("=== Creating Room ===", { nickname });
+      createRoom(nickname);
+    } else if (roomCode) {
+      console.log("=== Joining Room ===", { roomCode, nickname });
+      joinRoom(roomCode, nickname);
+    }
+  }, [
+    nickname,
+    roomCode,
+    isHost,
+    createRoom,
+    joinRoom,
+    router,
+    currentRoomCode,
+  ]);
 
   const handleCopyCode = async () => {
     if (currentRoomCode) {
@@ -60,7 +92,6 @@ export default function WaitingRoomPage() {
     // Only initialize once
     if (!window.__hasInitialized) {
       console.log("=== Initializing Room ===", { nickname, roomCode, isHost });
-      connectSocket();
       window.__hasInitialized = true;
 
       // Try to restore state first
@@ -202,9 +233,17 @@ export default function WaitingRoomPage() {
   const handleStartGame = () => {
     if (currentIsHost && players.length >= 2) {
       console.log("=== Host Starting Game ===");
+      setIsStartingGame(true);
       startGame();
     }
   };
+
+  // Reset loading state when game starts
+  useEffect(() => {
+    if (status === "playing") {
+      setIsStartingGame(false);
+    }
+  }, [status]);
 
   const handleLeaveRoom = () => {
     window.__hasInitialized = false; // Reset initialization flag
@@ -287,10 +326,17 @@ export default function WaitingRoomPage() {
           {currentIsHost ? (
             <Button
               className="w-full bg-purple-500 hover:bg-purple-600 text-white border-none"
-              disabled={players.length < 2}
+              disabled={players.length < 2 || isStartingGame}
               onClick={handleStartGame}
             >
-              Start Game
+              {isStartingGame ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Starting Game...
+                </>
+              ) : (
+                "Start Game"
+              )}
             </Button>
           ) : (
             <div className="text-center text-purple-300/70 p-4 bg-gray-800/50 rounded border border-purple-500/20">
@@ -302,6 +348,7 @@ export default function WaitingRoomPage() {
             variant="outline"
             className="w-full border-purple-500/20 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300"
             onClick={handleLeaveRoom}
+            disabled={isStartingGame}
           >
             Leave Room
           </Button>
